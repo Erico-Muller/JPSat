@@ -20,9 +20,17 @@
 #define MPS_OUT 10
 #define MPS_SCK 5
 
-float humidity, temperature, pressure, co2, light, lng, lat;
-bool sd = false;
-float term_pixels[AMG88xx_PIXEL_ARRAY_SIZE];
+struct {
+  float humidity;
+  float temperature;
+  float pressure;
+  float co2;
+  float light;
+  float coord[2]; // lng, lat
+  float term_cam_pixels[AMG88xx_PIXEL_ARRAY_SIZE];
+} payload;
+
+bool is_there_sd = false;
 
 DHT temp_dht(DHT_PIN, DHT_TYPE);
 Q2HX711 pressure_hx711(MPS_OUT, MPS_SCK);
