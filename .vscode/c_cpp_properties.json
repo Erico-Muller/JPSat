@@ -4,7 +4,8 @@
             "name": "Linux",
             "includePath": [
                 "/home/erico/Documentos/arduino/libraries/**",
-                "/home/erico/.arduino15/**"
+                "/home/erico/.arduino15/**",
+                "./**"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/gcc",
