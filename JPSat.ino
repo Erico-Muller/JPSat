@@ -10,7 +10,7 @@ void setup() {
    
   // Iniciar modulos
   sat.init_matrix();
-  sat.init();
+  sat.init_http();
 }
 
 void loop() {
@@ -26,7 +26,7 @@ void loop() {
   sat.read_term_cam(false);
 
   //Envio de dados
-  //sat.send_data();
+  sat.send_data();
 
   Serial.println();
   sat.display_title();

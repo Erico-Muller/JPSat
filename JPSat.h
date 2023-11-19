@@ -1,3 +1,4 @@
+#include "Arduino.h"
 // External Libs:
 // https://github.com/queuetue/Q2-HX711-Arduino-Library
 // https://github.com/solvek/CO2Sensor/
@@ -6,12 +7,14 @@
 #define JPSat_h
 
 // Importação de bibliotecas
+#include <Arduino.h>
 #include <Adafruit_AMG88xx.h>
 #include <Arduino_JSON.h>
 #include <Arduino_LED_Matrix.h>
 #include <BH1750.h>
 #include <CO2Sensor.h>
 #include <DHT.h>
+#include <ESP_SSLClient.h>
 #include <IPAddress.h>
 #include <MPU6050_tockn.h>
 #include <Q2HX711.h>
@@ -21,7 +24,6 @@
 #include <SoftwareSerial.h>
 #include <TinyGPSPlus.h>
 #include <WiFiS3.h>
-#include <WiFiSSLClient.h>
 #include <Wire.h>
 
 #include "arduino_secrets.h"
@@ -57,6 +59,7 @@ char pass[] = SECRET_PASS;
 char method[] = METHOD;
 char host[] = HOST;
 char path[] = PATH;
+char team_number[] = TEAM_NUMBER;
 
 long interval = INTERVAL * 500 * 30;
 int multiplier = 1;
@@ -89,7 +92,7 @@ class JPSat {
       TinyGPSPlus gps;
       SoftwareSerial ss{3, 2};
       MPU6050 acc_mpu6050{Wire};
-      WiFiSSLClient client;
+      ESP_SSLClient client;
       ArduinoLEDMatrix matrix;
       Adafruit_AMG88xx term_cam;
     } modules;
@@ -108,6 +111,7 @@ class JPSat {
 
     // Arquivos que serão escritos no SD
     enum Modules_files {
+      All,
       Humidity,
       Temperature,
       Pressure,
@@ -136,34 +140,45 @@ class JPSat {
     void write_data(Modules_files file) {
       if (is_there_sd) {
         switch (file) {
+          case All:
+            modules.fs = SD.open(F("all.txt"), FILE_WRITE);
+            modules.fs.println(payload_to_json());
+            modules.fs.close();
+            delay(10);
+            break;
           case Humidity:
             modules.fs = SD.open(F("humidity.txt"), FILE_WRITE);
             modules.fs.println(payload.humidity);  // %
             modules.fs.close();
+            delay(10);
             break;
 
           case Temperature:
             modules.fs = SD.open(F("temperature.txt"), FILE_WRITE);
             modules.fs.println(payload.temperature);  // °C
             modules.fs.close();
+            delay(10);
             break;
                         
           case Pressure:
             modules.fs = SD.open(F("pressure.txt"), FILE_WRITE);
             modules.fs.println(payload.pressure);
             modules.fs.close();
+            delay(10);
             break;
 
           case Co2:
             modules.fs = SD.open(F("co2.txt"), FILE_WRITE);
             modules.fs.println(payload.co2);  // ppm
             modules.fs.close();
+            delay(10);
             break;
 
           case Light:
             modules.fs = SD.open(F("light.txt"), FILE_WRITE);
             modules.fs.println(payload.light);  // lux
             modules.fs.close();
+            delay(10);
             break;
 
           // [lng], [lat]
@@ -173,6 +188,7 @@ class JPSat {
             modules.fs.print(F(","));
             modules.fs.println(payload.coord[1]);
             modules.fs.close();
+            delay(10);
             break;
 
           case Acc:
@@ -212,6 +228,7 @@ class JPSat {
             modules.fs.print(F("\tangleZ : "));
             modules.fs.println(modules.acc_mpu6050.getAngleZ());
             modules.fs.close();
+            delay(10);
             break;
 
           case Term_Cam:
@@ -224,6 +241,7 @@ class JPSat {
             }
             modules.fs.println("]");
             modules.fs.close();
+            delay(10);
             break;
         };
       }
@@ -234,27 +252,8 @@ class JPSat {
       if (millis() > interval*multiplier) {
         multiplier++;
 
-        JSONVar obj;
+        String json = payload_to_json();
 
-        obj["bateria"] = payload.battery;
-        obj["temperatura"] = (int)payload.temperature;
-        obj["pressao"] = payload.pressure;
-      
-        obj["giroscopio"][0] = modules.acc_mpu6050.getGyroX();
-        obj["giroscopio"][1] = modules.acc_mpu6050.getGyroY();
-        obj["giroscopio"][2] = modules.acc_mpu6050.getGyroZ();
-      
-        obj["acelerometro"][0] = modules.acc_mpu6050.getAccX();
-        obj["acelerometro"][1] = modules.acc_mpu6050.getAccY();
-        obj["acelerometro"][2] = modules.acc_mpu6050.getAccZ();
-
-        obj["payload"]["co2"] = payload.co2;
-        obj["payload"]["coord"][0] = payload.coord[0];
-        obj["payload"]["coord"][1] = payload.coord[1];
-        obj["payload"]["light"] = payload.light;
-        obj["payload"]["humidity"] = payload.humidity;
-
-        String json = JSON.stringify(obj);
         Serial.println(json);
 
         Serial.println("\nStarting connection to server...");
@@ -268,15 +267,16 @@ class JPSat {
           Serial.println("Connection: close");
           Serial.println("Content-Type: application/json");
           Serial.println("Content-Length: " + String(json.length()));
+          Serial.println("");
           Serial.println(json);
 
           modules.client.println(String(method) + " " + String(path) + " HTTP/1.1");
           modules.client.println("Host: " + String(host));
           modules.client.println("User-Agent: Arduino/1.0");
           modules.client.println("Connection: close");
-          modules.client.println("Content-Type: text/plain");
+          modules.client.println("Content-Type: application/json");
           modules.client.println("Content-Length: " + json.length());
-          modules.client.println();
+          modules.client.println("");
           modules.client.println(json);
         } else {
           Serial.println("REQUEST FAILED!");
@@ -533,6 +533,12 @@ class JPSat {
       }
       
       printWifiStatus();
+
+      modules.client.setInsecure();
+      modules.client.setBufferSizes(1024 /* rx */, 512 /* tx */);
+      modules.client.setDebugLevel(1);
+
+      modules.client.setClient(&modules.client);
     }
 
     void init_term_cam() {
@@ -573,6 +579,33 @@ class JPSat {
       modules.matrix.begin();
     }
 
+    String payload_to_json() {
+      JSONVar obj;
+
+      obj["equipe"] = team_number;
+      obj["bateria"] = payload.battery;
+      obj["temperatura"] = (int)payload.temperature;
+      obj["pressao"] = payload.pressure;
+    
+      obj["giroscopio"][0] = modules.acc_mpu6050.getGyroX();
+      obj["giroscopio"][1] = modules.acc_mpu6050.getGyroY();
+      obj["giroscopio"][2] = modules.acc_mpu6050.getGyroZ();
+    
+      obj["acelerometro"][0] = modules.acc_mpu6050.getAccX();
+      obj["acelerometro"][1] = modules.acc_mpu6050.getAccY();
+      obj["acelerometro"][2] = modules.acc_mpu6050.getAccZ();
+
+      obj["payload"]["co2"] = payload.co2;
+      obj["payload"]["coord"][0] = payload.coord[0];
+      obj["payload"]["coord"][1] = payload.coord[1];
+      obj["payload"]["light"] = payload.light;
+      obj["payload"]["humidity"] = payload.humidity;
+
+      String json = JSON.stringify(obj);
+
+      return json;
+    }
+
     void printWifiStatus() {
       Serial.print("SSID: ");
       Serial.println(WiFi.SSID());
@@ -587,7 +620,7 @@ class JPSat {
 
       while (modules.client.available()) {
         char c = modules.client.read();
-        
+
         Serial.print(c);
         
         received_data_num++;
